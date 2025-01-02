@@ -38,9 +38,20 @@ class Solution(SolutionBase):
         #determine target bin coordinates
         self.bin_id = meta['bin_id']
         self.bin_position = self.locate_bin(c4)
-        self.bin_position[0] += 0.1  # Offset X-axis towards center of bin
-        self.bin_position[1] -= 0.1  # Offset Y-axis towards center of bin
-        self.bin_position[2] += 0.4  # Offset in Z-axis for safety
+        
+        #set target bin position for r1
+        self.r1_target_bin_position = self.bin_position.copy()
+        self.r1_target_bin_position[0] += 0.1  # Offset X-axis towards center of bin
+        self.r1_target_bin_position[1] += 0.15 # Offset Y-axis towards center of bin
+        self.r1_target_bin_position[2] += 0.5  # Offset in Z-axis for safety
+        
+        #set target bin position for r2
+        self.r2_target_bin_position = self.bin_position.copy()
+        self.r2_target_bin_position[0] += 0.1  # Offset X-axis towards center of bin
+        self.r2_target_bin_position[1] -= 0.1  # Offset Y-axis towards center of bin
+        self.r2_target_bin_position[2] += 0.4  # Offset in Z-axis for safety
+        
+        
     
 
     def act(self, env: FinalEnv, current_timestep: int):
@@ -136,32 +147,49 @@ class Solution(SolutionBase):
                 p, q = pose.p, pose.q
                 q = euler2quat(np.pi, -np.pi / 1.5, quat2euler(q)[2])
                 self.diff_drive2(r2, 9, Pose(p, q), [4, 5, 6], [0, 0, 1, -1, 0], [0, 1, 2, 3, 4])
-                
-            elif (self.counter < 9000 / 5):
-                print("Phase 4c") #debug
+                                
+            elif not self.is_spade_above_bin(r2, self.r2_target_bin_position): #counter-independent condition
+                print("Phase 4c(i)") #debug
                 # move r2 to bin
-                approach_orientation = euler2quat(0, -np.pi / 2, 0) 
-                target_pose = Pose(self.bin_position, approach_orientation)
-                self.diff_drive(r2, index=9, target_pose=target_pose)
+                self.move_to_bin(r2, self.r2_target_bin_position)
                 
-            elif (self.counter < 10000 / 5):
-                print("Phase 4d") #debug
-                #rotate spade
-                qpos, _, _ = r2.get_observation()
-                last_joint_index = r2.dof - 1  
-                steps = 36
-                for step in range(steps):
-                    qpos[last_joint_index] += (2 * np.pi) / steps #rotate joint at angle of 2pi / steps
-                    drive_target = qpos
-                    drive_velocity = [0] * r2.dof  
-                    additional_force = [0] * r2.dof 
-                    
-                    r2.set_action(drive_target, drive_velocity, additional_force)
-
+            elif not self.is_spade_above_bin(r1, self.r1_target_bin_position): #counter-independent condition
+                print("Phase 4c(ii)") #debug
+                # move r1 to bin
+                self.move_to_bin(r1, self.r1_target_bin_position)
+                
             else:
-                print("Phase 4e") #debug
-                self.phase = 0
-                # return False
+                print("Phase 4d")  # Debug
+                # Initialize rotation state if it doesn't exist
+                if not hasattr(self, "_rotation_step"):
+                    self._rotation_step = 0
+                    self._total_steps = 36
+                    self._delay_multiplier = 30
+                    self._delay_counter = 0
+                    self._initial_qpos = r2.get_observation()[0]  
+                    
+                if self._delay_counter < self._delay_multiplier:
+                    self._delay_counter += 1
+                else:
+                    self._delay_counter = 0
+                    self._rotation_step += 1
+                    
+                    self.rotate_spade(r2, self._initial_qpos, self._rotation_step, self._total_steps)
+                    self.rotate_spade(r1, self._initial_qpos, self._rotation_step, self._total_steps, clockwise=False)
+
+                # If rotation is complete, clean up private variables
+                if self._rotation_step >= self._total_steps:
+                    del self._rotation_step
+                    del self._total_steps
+                    del self._delay_multiplier
+                    del self._delay_counter
+                    del self._initial_qpos
+                    self.phase += 1  
+                                        
+        if self.phase == 5: #set an independent phase for return to start
+            print('Phase 5')
+            self.phase = 0
+
 
 
 
@@ -297,6 +325,51 @@ class Solution(SolutionBase):
         bin_global_position = self.get_global_position_from_camera(camera, depth, x_center, y_center)
         return bin_global_position
 
+    def move_to_bin(self, robot, target_bin_position):
+        """
+        Move the robot arm close to the bin without touching it.
+        """
+        approach_orientation = euler2quat(0, -np.pi / 2, 0)
+        target_pose = Pose(target_bin_position, approach_orientation)
+        self.diff_drive(robot, index=9, target_pose=target_pose)
+
+    def is_spade_above_bin(self, robot, target_bin_position):
+        """
+        Checks if the spade (last joint of the robot) is directly above the bin
+        based on the x and y coordinates.
+
+        Parameters:
+            robot: The robot agent (e.g., r1 or r2).
+            target_bin_position: bin position that the robot should arrive at
+        Returns:
+            bool: True if the spade is above the bin, otherwise False.
+        """
+        # Get the pose of the last joint
+        last_joint_index = robot.dof - 1
+        qpos, _, poses = robot.get_observation()
+        last_joint_pose: Pose = poses[last_joint_index]
+
+        # Extract the x, y positions
+        spade_position = last_joint_pose.p[:2]  # (x, y)
+        bin_position = target_bin_position[:2]    # (x, y)
+
+        # Define a small tolerance for overlap
+        tolerance = 0.15
+        in_position = np.allclose(spade_position, bin_position, atol=tolerance)
+        return in_position
+
+
+    def rotate_spade(self, robot, initial_qpos, rotation_step, total_steps, clockwise=True):
+        # Rotate the joint
+        direction = 1 if clockwise else -1
+        qpos, _, _ = robot.get_observation()
+        last_joint_index = robot.dof - 1  
+        qpos[last_joint_index] = initial_qpos[last_joint_index] + direction * (2 * np.pi) * (rotation_step / total_steps)
+
+        drive_target = qpos
+        drive_velocity = [0] * robot.dof  
+        additional_force = [0] * robot.dof 
+        robot.set_action(drive_target, drive_velocity, additional_force)
 
 if __name__ == '__main__':
     np.random.seed(0)
