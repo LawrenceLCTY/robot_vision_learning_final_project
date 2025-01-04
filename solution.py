@@ -293,7 +293,8 @@ class Solution(SolutionBase):
     def pick_box(self, c):
         color, depth, segmentation = c.get_observation()
 
-        np.random.shuffle(self.box_ids)
+        # Get the global positions of all boxes
+        box_positions = {}
         for i in self.box_ids:
             m = np.where(segmentation == i)
             if len(m[0]):
@@ -307,9 +308,59 @@ class Solution(SolutionBase):
                     min_y = min(min_y, y)
                     max_y = max(max_y, y)
                 x, y = round((min_x + max_x) / 2), round((min_y + max_y) / 2)
-                return self.get_global_position_from_camera(c, depth, x, y)
+                global_position = self.get_global_position_from_camera(c, depth, x, y)
+                box_positions[i] = global_position
 
-        return False
+        # If no boxes are found, return False
+        if not box_positions:
+            return [None,None]
+
+        # Count neighbors for each box
+        neighbor_counts = {}
+        reachable_boxes = []
+        for box_id, position in box_positions.items():
+            # Check if the box is reachable (within the robot's workspace)
+            if self.is_box_reachable(position):  # Implement this function
+                reachable_boxes.append(box_id)
+                neighbor_counts[box_id] = 0
+                for other_box_id, other_position in box_positions.items():
+                    if box_id != other_box_id:
+                        distance = np.linalg.norm(position - other_position)
+                        if distance < 0.2:  # Neighbor threshold (adjust as needed)
+                            neighbor_counts[box_id] += 1
+
+        # If no reachable boxes, return False
+        if not reachable_boxes:
+            return [None,None]
+
+        # Prioritize boxes with the most neighbors
+        prioritized_boxes = sorted(reachable_boxes, key=lambda x: neighbor_counts[x], reverse=True)
+
+        # Return the position of the box with the most neighbors
+        best_box_id = prioritized_boxes[0]
+        return box_positions[best_box_id]
+    
+    def is_box_reachable(self, box_position):
+        """
+        Check if the box is within the robot's workspace.
+        Args:
+            box_position: 3D global position of the box.
+        Returns:
+            bool: True if the box is reachable, False otherwise.
+        """
+        # Define the robot's workspace limits (adjust as needed)
+        workspace_limits = {
+            'x': [-0.30, 0.20],  # X-axis limits
+            'y': [-0.40, 0.40],  # Y-axis limits
+            'z': [0.0, 1.5]    # Z-axis limits
+        }
+
+        # Check if the box is within the workspace limits
+        within_x = workspace_limits['x'][0] <= box_position[0] <= workspace_limits['x'][1]
+        within_y = workspace_limits['y'][0] <= box_position[1] <= workspace_limits['y'][1]
+        within_z = workspace_limits['z'][0] <= box_position[2] <= workspace_limits['z'][1]
+
+        return within_x and within_y and within_z
     
     def locate_bin(self, z_offset=0.0):
         """
@@ -672,7 +723,7 @@ def pose2mat(pose):
     return T
 
 if __name__ == '__main__':
-    np.random.seed(1)
+    np.random.seed(3)
     env = FinalEnv()
     env.run(Solution(), render=True, render_interval=5, debug=True)
     env.close()

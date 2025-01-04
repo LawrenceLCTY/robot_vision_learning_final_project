@@ -188,7 +188,7 @@ class Solution(SolutionBase):
             self.counter += 1
 
             if (self.counter == 1):
-                selected = self.pick_box(c4)
+                selected = self.pick_box1(c4)
                 self.selected_x = selected[0]
                 if self.selected_x is None:
                     return False
@@ -237,19 +237,16 @@ class Solution(SolutionBase):
                 self.counter = 0
 
         if self.phase == 3:
-            print("3")
             if self.counter < 500 / 5:
                 self.counter += 1
                 self.diff_drive(r1, 9, self.pose_left)
                 self.diff_drive(r2, 9, self.pose_right)
-                print("3.1")
 
             elif self.counter < 1500 / 5:
                 self.counter += 1
                 t1 = [3, 1, 0, -1.5, -1, 1, -2]
                 r1.set_action(t1, [0] * 7, pf_left)
                 self.diff_drive(r2, 9, self.pose_right)
-                print("3.2")
 
             else:
                 self.phase = 4
@@ -326,8 +323,6 @@ class Solution(SolutionBase):
                 #self.jacobian_drive(r2, 9, Pose(p, q))
                 self.jacobian_drive(r2, 9, Pose(p, q))
             elif (self.counter < 6000 / 5):
-                #p = [-1, -0., 1.2]  # a milestone to control the trajectory for avoiding collision
-                print("Phase 4b")
                 p = self.bin_position.copy()
                 p[2]+=0.7
                 #p[0]+=0.2
@@ -358,8 +353,6 @@ class Solution(SolutionBase):
                 cent = self.r2_target_bin_position.copy()
                 p = self.bin_position.copy()
                 #p[2] += 0.2
-                print("4cbin:",p)
-                print("4cr2:", r2.get_observation()[2][9].p)
                 p[1] -= 0.2
                 # p = [-1, -0.1, 1.2]
                 #target_position = self.get_offset(r2.get_observation()[2][9].p,p)
@@ -375,7 +368,6 @@ class Solution(SolutionBase):
                 #target_position = self.get_offset(robot_pose, self.bin_position)
 
             elif (self.counter < 7500 / 5):
-                print("phase 4cc")
             #    cent = self.r2_target_bin_position.copy()
                 p =r2.get_observation()[2][9].p
             #    print("4ccbin:",p)
@@ -461,7 +453,6 @@ class Solution(SolutionBase):
 
                                         
         if self.phase == 5: #set an independent phase for return to start
-            print('Phase 5')
             self.rotate_flag=False
             self.phase = 0
 
@@ -545,7 +536,7 @@ class Solution(SolutionBase):
         # Set robot action
         robot.set_action(qpos, target_qvel, pf)
 
-    def jacobian_drive(self, robot, index, target_pose, speed=0.3):
+    def jacobian_drive(self, robot, index, target_pose, speed=0.5):
             """
             This function aims to move the robot's end effector to a target pose based on Jacobian matrices,
             which relate joint velocities to end effector velocities
@@ -792,7 +783,6 @@ class Solution(SolutionBase):
     def get_offset(self,current_pose, bin_center):
         offset_x = bin_center[0] - current_pose[0]
         offset_y = bin_center[1] - current_pose[1]
-        print("offset_y",offset_y)
         target_position = [
             current_pose[0],
             current_pose[1] + offset_y,
@@ -801,38 +791,102 @@ class Solution(SolutionBase):
 
         return target_position
     
-    def locate_spade_length(self, camera):
+    def is_box_reachable(self, box_position):
         """
-        Calculate the length of the spade using the camera's segmentation and depth data.
+        Check if the box is within the robot's workspace.
+        Args:
+            box_position: 3D global position of the box.
+        Returns:
+            bool: True if the box is reachable, False otherwise.
         """
-        _, depth, segmentation = camera.get_observation()
+        # Define the robot's workspace limits (adjust as needed)
+        workspace_limits = {
+            'x': [-0.30, 0.20],  # X-axis limits
+            'y': [-0.40, 0.40],  # Y-axis limits
+            'z': [0.0, 1.5]    # Z-axis limits
+        }
 
-        # Get the spade's ID from the robot's metadata
-        r_meta = env.get_agents()[1].get_metadata()  # Assuming r2 is the robot with the spade
-        spade_id = r_meta['link_ids'][-1]  # Spade is typically the last link
+        # Check if the box is within the workspace limits
+        within_x = workspace_limits['x'][0] <= box_position[0] <= workspace_limits['x'][1]
+        within_y = workspace_limits['y'][0] <= box_position[1] <= workspace_limits['y'][1]
+        within_z = workspace_limits['z'][0] <= box_position[2] <= workspace_limits['z'][1]
 
-        # Find the pixels belonging to the spade
-        spade_pixels = np.where(segmentation == spade_id)
-        if len(spade_pixels[0]) == 0:
-            raise ValueError("Spade not found in the camera's view.")
+        return within_x and within_y and within_z
+    
+    def pick_box1(self, c):
+        color, depth, segmentation = c.get_observation()
 
-        # Find the base and tip of the spade
-        # Base: Pixel closest to the robot's arm (assume the base is at the top of the image)
-        base_pixel = (spade_pixels[0].min(), spade_pixels[1][np.argmin(spade_pixels[0])])
-        
-        # Tip: Pixel farthest from the base (assume the tip is at the bottom of the image)
-        tip_pixel = (spade_pixels[0].max(), spade_pixels[1][np.argmax(spade_pixels[0])])
+        # Get the global positions of all boxes
+        box_positions = {}
+        for i in self.box_ids:
+            m = np.where(segmentation == i)
+            if len(m[0]):
+                min_x = 10000
+                max_x = -1
+                min_y = 10000
+                max_y = -1
+                for y, x in zip(m[0], m[1]):
+                    min_x = min(min_x, x)
+                    max_x = max(max_x, x)
+                    min_y = min(min_y, y)
+                    max_y = max(max_y, y)
+                x, y = round((min_x + max_x) / 2), round((min_y + max_y) / 2)
+                global_position = self.get_global_position_from_camera(c, depth, x, y)
+                box_positions[i] = global_position
 
-        # Convert the base and tip pixels to global coordinates
-        base_position = self.get_global_position_from_camera(camera, depth, base_pixel[1], base_pixel[0])
-        tip_position = self.get_global_position_from_camera(camera, depth, tip_pixel[1], tip_pixel[0])
+        # If no boxes are found, return False
+        if not box_positions:
+            return [None,None]
 
-        # Compute the Euclidean distance between the base and tip
-        spade_length = np.linalg.norm(base_position - tip_position)
-        return spade_length
+        # Count neighbors for each box
+        neighbor_counts = {}
+        reachable_boxes = []
+        for box_id, position in box_positions.items():
+            # Check if the box is reachable (within the robot's workspace)
+            if self.is_box_reachable(position):  # Implement this function
+                reachable_boxes.append(box_id)
+                neighbor_counts[box_id] = 0
+                for other_box_id, other_position in box_positions.items():
+                    if box_id != other_box_id:
+                        distance = np.linalg.norm(position - other_position)
+                        if distance < 0.2:  # Neighbor threshold (adjust as needed)
+                            neighbor_counts[box_id] += 1
+
+        # If no reachable boxes, return False
+        if not reachable_boxes:
+            return [None,None]
+
+        # Prioritize boxes with the most neighbors
+        prioritized_boxes = sorted(reachable_boxes, key=lambda x: neighbor_counts[x], reverse=True)
+
+        # Return the position of the box with the most neighbors
+        best_box_id = prioritized_boxes[0]
+        return box_positions[best_box_id]
+    
+    def is_box_reachable(self, box_position):
+        """
+        Check if the box is within the robot's workspace.
+        Args:
+            box_position: 3D global position of the box.
+        Returns:
+            bool: True if the box is reachable, False otherwise.
+        """
+        # Define the robot's workspace limits (adjust as needed)
+        workspace_limits = {
+            'x': [-0.30, 0.20],  # X-axis limits
+            'y': [-0.40, 0.40],  # Y-axis limits
+            'z': [0.0, 1.5]    # Z-axis limits
+        }
+
+        # Check if the box is within the workspace limits
+        within_x = workspace_limits['x'][0] <= box_position[0] <= workspace_limits['x'][1]
+        within_y = workspace_limits['y'][0] <= box_position[1] <= workspace_limits['y'][1]
+        within_z = workspace_limits['z'][0] <= box_position[2] <= workspace_limits['z'][1]
+
+        return within_x and within_y and within_z
     
 if __name__ == '__main__':
-    np.random.seed(10)
+    np.random.seed(0)
     env = FinalEnv()
     env.run(Solution(), render=True, render_interval=5, debug=True)
     env.close()
