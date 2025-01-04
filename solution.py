@@ -230,38 +230,6 @@ class Solution(SolutionBase):
         target_qvel = robot.get_compute_functions()['cartesian_diff_ik'](np.concatenate((v, w)), 9)
         robot.set_action(qpos, target_qvel, pf)
 
-    def diff_drive2(self, robot, index, target_pose, js1, joint_target, js2):
-        """
-        This is a hackier version of the diff_drive
-        It uses specified joints to achieve the target pose of the end effector
-        while asking some other specified joints to match a global pose
-        """
-        pf = robot.get_compute_functions()['passive_force'](True, True, False)
-        max_v = 0.1
-        max_w = np.pi
-        qpos, qvel, poses = robot.get_observation()
-        current_pose: Pose = poses[index]
-        delta_p = target_pose.p - current_pose.p
-        delta_q = qmult(target_pose.q, qinverse(current_pose.q))
-
-        axis, theta = quat2axangle(delta_q)
-        if (theta > np.pi):
-            theta -= np.pi * 2
-
-        t1 = np.linalg.norm(delta_p) / max_v
-        t2 = theta / max_w
-        t = max(np.abs(t1), np.abs(t2), 0.001)
-        thres = 0.1
-        if t < thres:
-            k = (np.exp(thres) - 1) / thres
-            t = np.log(k * t + 1)
-        v = delta_p / t
-        w = theta / t * axis
-        target_qvel = robot.get_compute_functions()['cartesian_diff_ik'](np.concatenate((v, w)), 9)
-        for j, target in zip(js2, joint_target):
-            qpos[j] = target
-        robot.set_action(qpos, target_qvel, pf)
-
     def get_global_position_from_camera(self, camera, depth, x, y):
         """
         camera: an camera agent
@@ -377,14 +345,6 @@ class Solution(SolutionBase):
         bin_center[2] += z_offset
 
         return bin_center
-
-    def move_to_bin(self, robot, target_bin_position):
-        """
-        Move the robot arm close to the bin without touching it.
-        """
-        approach_orientation = euler2quat(0, -np.pi / 2, 0)
-        target_pose = Pose(target_bin_position, approach_orientation)
-        self.diff_drive(robot, index=9, target_pose=target_pose)
 
     def is_spade_above_bin(self, robot, target_bin_position):
         """
@@ -723,7 +683,7 @@ def pose2mat(pose):
     return T
 
 if __name__ == '__main__':
-    np.random.seed(3)
+    np.random.seed(123)
     env = FinalEnv()
     env.run(Solution(), render=True, render_interval=5, debug=True)
     env.close()
