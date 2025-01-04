@@ -185,6 +185,7 @@ class Solution(SolutionBase):
             if score > self.total_box_picked: #current score is greater than previous score
                 self.total_box_picked = score #copies current score
                 self.useless_time = 0 
+                self.fail_chances = 3
             else: #no boxes were picked
                 self.fail_chances -= 1
                 self.useless_time += self.counter
