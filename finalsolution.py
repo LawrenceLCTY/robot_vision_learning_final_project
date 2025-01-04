@@ -863,6 +863,28 @@ class Solution(SolutionBase):
         best_box_id = prioritized_boxes[0]
         return box_positions[best_box_id]
     
+    def is_box_reachable(self, box_position):
+        """
+        Check if the box is within the robot's workspace.
+        Args:
+            box_position: 3D global position of the box.
+        Returns:
+            bool: True if the box is reachable, False otherwise.
+        """
+        # Define the robot's workspace limits (adjust as needed)
+        workspace_limits = {
+            'x': [-0.30, 0.20],  # X-axis limits
+            'y': [-0.40, 0.40],  # Y-axis limits
+            'z': [0.0, 1.5]    # Z-axis limits
+        }
+
+        # Check if the box is within the workspace limits
+        within_x = workspace_limits['x'][0] <= box_position[0] <= workspace_limits['x'][1]
+        within_y = workspace_limits['y'][0] <= box_position[1] <= workspace_limits['y'][1]
+        within_z = workspace_limits['z'][0] <= box_position[2] <= workspace_limits['z'][1]
+
+        return within_x and within_y and within_z
+    
 if __name__ == '__main__':
     np.random.seed(0)
     env = FinalEnv()
