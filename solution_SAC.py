@@ -3,6 +3,7 @@
 # solutions, (2) you retain this notice, and (3) you provide clear
 # attribution to UC San Diego.
 # Created by Yuzhe Qin, Fanbo Xiang
+import math
 
 from final_env import FinalEnv, SolutionBase
 import numpy as np
@@ -28,6 +29,7 @@ import time
 import psutil
 import numpy as np
 
+global_running_reward = 0
 
 class Solution(SolutionBase):
     """
@@ -105,6 +107,10 @@ class Solution(SolutionBase):
                     action_bounds=action_bounds,
                     reward_scale=1.0)
 
+        # use weights
+        self.sac_agent.load_weights()
+
+
         self.box_counter = 0
         self.initiate_training = True
         self.state = None
@@ -112,26 +118,17 @@ class Solution(SolutionBase):
         self.next_state = None
         self.episode_reward = 0
         self.start_time = None
-        self.episode, self.value_loss, self.q_loss, self.policy_loss = 0, 0, 0, 0
+        self.episode, self.value_loss, self.q_loss, self.policy_loss, self.distance_to_bin = 0, 0, 0, 0, 0
 
 
 
     ###################### SAC related code #########################################
 
     def log(self, episode, start_time, episode_reward, value_loss, q_loss, policy_loss, memory_length):
-        global global_running_reward
-        global_running_reward = episode_reward if episode == 0 else 0.99 * global_running_reward + 0.01 * episode_reward
-
-        ram = psutil.virtual_memory()
-        if episode % 400 == 0:
-            print(f"EP:{episode}| EP_r:{episode_reward:3.3f}| EP_running_r:{global_running_reward:3.3f}...")
-            agent.save_weights()
-
         with SummaryWriter("sapien_logs/") as writer:
             writer.add_scalar("Value Loss", value_loss, episode)
             writer.add_scalar("Q-Value Loss", q_loss, episode)
             writer.add_scalar("Policy Loss", policy_loss, episode)
-            writer.add_scalar("Running reward", global_running_reward, episode)
 
     def sapien_robot_to_sac_input(self, robot):
 
@@ -344,15 +341,39 @@ class Solution(SolutionBase):
             self.box_counter = current_box
             reward += new_box * 100
         else:
-            reward += -1
+            reward -= 0.1
 
         return reward
+
+    def dist_to_bin(self, env: FinalEnv):
+        r1, r2, _, _, _, camera = env.get_agents()
+
+        bin_location = self.locate_bin(camera)
+        dist = 0
+        print(f"bin_location {bin_location}")
+        for i in range(3):
+            dist += math.pow(r1.get_observation()[2][9].p[i] - bin_location[i], 2)
+            dist += math.pow(r2.get_observation()[2][9].p[i] - bin_location[i], 2)
+        return dist
+
+    def get_close_to_bin_reward(self, env: FinalEnv):
+
+        return (1 - self.dist_to_bin(env) / self.distance_to_bin) * 10
+
+
 
     def get_reward(self, env: FinalEnv):
         """
         Change funciton to test different rewards
+        Need to promote the sapien to move towards the bin
+        Needs to decrease the punishment for time
         """
-        return self.get_reward_box(env) - self.get_small_move_punishment() - self.get_collision_punishment(env)
+
+
+
+
+        return self.get_reward_box(env) - 0.1 * self.get_small_move_punishment()\
+            - 0.1 * self.get_collision_punishment(env)
 
     ############################################################################
         
@@ -447,7 +468,7 @@ class Solution(SolutionBase):
 
         if self.phase == 4:
             self.counter += 1
-            if (self.counter < 10000):
+            if (self.counter < 1000):
 
                 # use this to train SAC agent
                 # new state and action
@@ -456,7 +477,6 @@ class Solution(SolutionBase):
 
                 # new state given previous action
                 self.next_state = self.get_env_robot_state(env)
-
 
                 if self.initiate_training:
                     self.episode += 1
@@ -467,6 +487,7 @@ class Solution(SolutionBase):
                     self.action = self.sac_agent.choose_action(self.state)
                     self.apply_action(env, self.action)
                     self.episode_reward = 0
+                    self.distance_to_bin = self.dist_to_bin(env)
                     # end here cause we just started, need to render the environment
                     return
 
@@ -482,6 +503,12 @@ class Solution(SolutionBase):
                 self.state = self.next_state
                 # new action
                 self.action = self.sac_agent.choose_action(self.next_state)
+
+                if self.action[-1] < 0:
+                    # self.action less than 1 indicate no chance of return
+                    self.phase = 5
+                    return
+
                 # apply
                 self.apply_action(env, self.action)
 
@@ -493,6 +520,16 @@ class Solution(SolutionBase):
                 self.log(self.episode, self.start_time, self.episode_reward, self.value_loss, self.q_loss, self.policy_loss,
                          len(self.sac_agent.memory))
                 self.phase = 5
+
+            global global_running_reward
+            global_running_reward = self.episode_reward if self.episode == 0 else \
+                0.99 * global_running_reward + 0.01 * self.episode_reward
+
+            ram = psutil.virtual_memory()
+            if self.episode % 400 == 0:
+                print(f"EP:{self.episode}| EP_r:{self.episode_reward:3.3f}| EP_running_r:{global_running_reward:3.3f}...")
+                self.sac_agent.save_weights()
+            self.episode += 1
                                         
         if self.phase == 5: #set an independent phase for return to start
             print('Phase 5')
