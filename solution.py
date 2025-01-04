@@ -184,6 +184,7 @@ class Solution(SolutionBase):
             score = env.get_reward()
             if score > self.total_box_picked: #current score is greater than previous score
                 self.total_box_picked = score #copies current score
+                #reset penalty metrics since we are measuring continuous useleness
                 self.useless_time = 0 
                 self.fail_chances = 3
             else: #no boxes were picked
