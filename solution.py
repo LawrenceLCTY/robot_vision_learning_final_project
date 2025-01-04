@@ -51,6 +51,8 @@ class Solution(SolutionBase):
         self.r2_target_bin_position[1] -= 0.1  # Offset Y-axis towards center of bin
         self.r2_target_bin_position[2] += 0.4  # Offset in Z-axis for safety
         
+        self.total_box_picked = 0 #placeholder for boxed picked
+        self.fail_chances = 1 #chances allowed for empty catches
         
     
 
@@ -186,9 +188,20 @@ class Solution(SolutionBase):
                     del self._initial_qpos
                     self.phase += 1  
                                         
-        if self.phase == 5: #set an independent phase for return to start
+        if self.phase == 5: #End phase: either continue simulation or end scene
             print('Phase 5')
             self.phase = 0
+            
+            score = env.get_reward()
+            # print('score: ', score) #debug
+            if score > self.total_box_picked: #current score is greater than previous score
+                self.total_box_picked = score #copies current score
+            else: #no boxes were picked
+                print(f'Failed to place boxes in bin. Remaining chances: {self.fail_chances}') #debug
+                self.fail_chances -= 1
+                if self.fail_chances < 0:
+                    return False #end scene
+                
 
 
 
