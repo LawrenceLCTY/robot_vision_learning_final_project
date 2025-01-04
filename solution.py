@@ -40,7 +40,10 @@ class Solution(SolutionBase):
         self.target_bin_position = self.locate_bin(z_offset=0.5)
         
         self.total_box_picked = 0 #placeholder for boxed picked
-        self.fail_chances = 1 #chances allowed for empty catches
+        self.fail_chances = 3 #chances allowed for empty catches
+        
+        self.useless_time = 0
+        self.time_limit = 10000 #inefficient/useless time allowed
         
     
 
@@ -60,8 +63,8 @@ class Solution(SolutionBase):
             if np.allclose(r1.get_observation()[0], t1, 0.05, 0.05) and np.allclose(
                     r2.get_observation()[0], t2, 0.05, 0.05):
                 self.phase = 1
-                self.counter = 0
                 self.selected_x = None
+                self.counter = 0
 
         if self.phase == 1:
             self.counter += 1
@@ -69,7 +72,7 @@ class Solution(SolutionBase):
             if (self.counter == 1):
                 selected = self.pick_box(c4)
                 self.selected_x = selected[0]
-                if self.selected_x is None:
+                if self.selected_x is None: #No box to select
                     return False
 
             target_pose_left = Pose([self.selected_x, 0.5, 0.67], euler2quat(np.pi, -np.pi / 3, -np.pi / 2))
@@ -80,7 +83,6 @@ class Solution(SolutionBase):
 
             if self.counter == 2000 / 5:
                 self.phase = 2
-                self.counter = 0
 
                 pose = r1.get_observation()[2][9]
                 p, q = pose.p, pose.q
@@ -97,7 +99,7 @@ class Solution(SolutionBase):
             self.diff_drive(r1, 9, self.pose_left)
             self.diff_drive(r2, 9, self.pose_right)
             
-            if self.counter == 2000 / 5:
+            if self.counter == 4000 / 5:
                 self.phase = 3
                 
                 pose = r1.get_observation()[2][9]
@@ -112,34 +114,31 @@ class Solution(SolutionBase):
                 q = euler2quat(np.pi, -np.pi / 1.8, np.pi / 2)
                 self.pose_right = Pose(p, q)
 
-                self.counter = 0
-
         if self.phase == 3:
             self.counter += 1
-            if self.counter < 500 / 5:
+            if self.counter < 5000 / 5:
                 print("Phase 3a") #debug
                 self.diff_drive(r1, 9, self.pose_left)
                 self.diff_drive(r2, 9, self.pose_right)
-            elif self.counter < 1500 / 5:
+            elif self.counter < 6000 / 5:
                 print("Phase 3b") #debug
                 t1 = [3, 1, 0, -1.5, -1, 1, -2]
                 r1.set_action(t1, [0] * 7, pf_left)
                 self.diff_drive(r2, 9, self.pose_right)
             else:
                 self.phase = 4
-                self.counter = 0
 
 
         if self.phase == 4:
             self.counter += 1
-            if (self.counter < 1000 / 5):
+            if (self.counter < 7000 / 5):
                 print("Phase 4a") #debug
                 pose = r2.get_observation()[2][9]
                 p, q = pose.p, pose.q
                 q = euler2quat(np.pi, -np.pi / 1.5, quat2euler(q)[2])
                 self.jacobian_drive(r2, 9, Pose(p, q))
                 
-            elif (self.counter < 3000 / 5):
+            elif (self.counter < 9000 / 5):
                 print("Phase 4b") #debug
                 p = self.target_bin_position.copy()
                 p[2]+=1.0
@@ -170,8 +169,6 @@ class Solution(SolutionBase):
                     
                     self.rotate_spade(r2, self._initial_qpos, self._rotation_step, self._total_steps)
                 
-                print(f'Rotation step: {self._rotation_step}')
-                    
                 if self._rotation_step >= self._total_steps:
                     del self._rotation_step
                     del self._total_steps
@@ -187,10 +184,13 @@ class Solution(SolutionBase):
             score = env.get_reward()
             if score > self.total_box_picked: #current score is greater than previous score
                 self.total_box_picked = score #copies current score
+                self.useless_time = 0 
             else: #no boxes were picked
-                print(f'Failed to place boxes in bin. Remaining chances: {self.fail_chances}') #debug
                 self.fail_chances -= 1
-                if self.fail_chances < 0:
+                self.useless_time += self.counter
+                print(f'Failed to place boxes in bin. Remaining chances: {self.fail_chances}') #debug
+                print(f'Current time: {self.useless_time}; Time limit: {self.time_limit}')
+                if self.fail_chances <= 0 or self.useless_time > self.time_limit: #too many failed chances or out of time
                     return False #end scene
             
 
@@ -670,7 +670,7 @@ def pose2mat(pose):
     return T
 
 if __name__ == '__main__':
-    np.random.seed(0)
+    np.random.seed(1)
     env = FinalEnv()
     env.run(Solution(), render=True, render_interval=5, debug=True)
     env.close()
