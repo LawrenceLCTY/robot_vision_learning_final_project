@@ -44,6 +44,7 @@ class Solution(SolutionBase):
         
         self.useless_time = 0
         self.time_limit = 10000 #inefficient/useless time allowed
+        self.sweep_start_pos = 0
         
     
 
@@ -93,7 +94,7 @@ class Solution(SolutionBase):
                 p, q = pose.p, pose.q
                 p[1] = -0.07
                 self.pose_right = Pose(p, q)
-
+        
         if self.phase == 2:
             self.counter += 1
             self.diff_drive(r1, 9, self.pose_left)
@@ -105,54 +106,79 @@ class Solution(SolutionBase):
                 pose = r1.get_observation()[2][9]
                 p, q = pose.p, pose.q
                 p[2] += 0.1
-                q = euler2quat(np.pi, -np.pi / 4, -np.pi / 2)
+                q = euler2quat(np.pi, -np.pi / 4.2, -np.pi / 2)
                 self.pose_left = Pose(p, q)
+
+                self.sweep_start_pos = np.copy(p)
 
                 pose = r2.get_observation()[2][9]
                 p, q = pose.p, pose.q
-                p[2] += 0.0
-                q = euler2quat(np.pi, -np.pi / 1.8, np.pi / 2)
+                self.start_pos = np.copy(p)
+                p[1] += 0.01
+                q = euler2quat(np.pi, -np.pi / 2.0, np.pi / 2)
                 self.pose_right = Pose(p, q)
-
+                
         if self.phase == 3:
             self.counter += 1
-            if self.counter < 5000 / 5:
-                print("Phase 3a") #debug
+            if self.counter < 5000 / 5:  # Initial orientation phase
+                #print("Phase 3a - Orienting") #debug
                 self.diff_drive(r1, 9, self.pose_left)
                 self.diff_drive(r2, 9, self.pose_right)
-            elif self.counter < 6000 / 5:
-                print("Phase 3b") #debug
+            elif self.counter < 5100/5:
+                
+                q = euler2quat(np.pi, -np.pi / 1.9, np.pi / 2)
+                self.pose_right = Pose(self.start_pos, q)
+                self.diff_drive(r2, 9, self.pose_right)
+            
+            elif self.counter < 5500 / 5:
+                #print("Phase 3b - Sweeping Forward") #debug
+                sweep_pose = Pose(
+                    p=np.array([
+                        self.sweep_start_pos[0],
+                        self.sweep_start_pos[1] - 0.1,  
+                        self.sweep_start_pos[2] - 0.1
+                    ]),
+                    q=self.pose_left.q 
+                )
+                self.diff_drive(r1, 9, sweep_pose)
+                self.diff_drive(r2, 9, self.pose_right)
+            
+            elif self.counter < 6000 / 5: 
+                #print("Phase 3c - Safety Adjustment") #debug
                 t1 = [3, 1, 0, -1.5, -1, 1, -2]
                 r1.set_action(t1, [0] * 7, pf_left)
                 self.diff_drive(r2, 9, self.pose_right)
+
+            elif is_spade_empty(self, c4, r2):
+                self.phase = 0
+
             else:
                 self.phase = 4
-
 
         if self.phase == 4:
             self.counter += 1
             if (self.counter < 7000 / 5):
-                print("Phase 4a") #debug
+                #print("Phase 4a") #debug
                 pose = r2.get_observation()[2][9]
                 p, q = pose.p, pose.q
                 q = euler2quat(np.pi, -np.pi / 1.5, quat2euler(q)[2])
                 self.jacobian_drive(r2, 9, Pose(p, q))
                 
             elif (self.counter < 9000 / 5):
-                print("Phase 4b") #debug
+                #print("Phase 4b") #debug
                 p = self.target_bin_position.copy()
                 p[2]+=1.0
                 q = euler2quat(0, -np.pi / 3, 0)
                 self.jacobian_drive(r2, 9, Pose(p, q))
                 
             elif not self.is_spade_above_bin(r2, self.target_bin_position):
-                print("Phase 4c")
+                #print("Phase 4c")
                 p = self.target_bin_position.copy()
                 p[1] -= 0.1
                 q = euler2quat(0, -np.pi / 2, 0)
                 self.jacobian_drive(r2, 9, Pose(p, q))
             else:
-                print("phase 4d")
+                #print("phase 4d")
                 # Initialize rotation state if it doesn't exist
                 if not hasattr(self, "_rotation_step"):
                     self._rotation_step = 0
@@ -288,7 +314,7 @@ class Solution(SolutionBase):
         reachable_boxes = []
         for box_id, position in box_positions.items():
             # Check if the box is reachable (within the robot's workspace)
-            if self.is_box_reachable(position):  # Implement this function
+            if is_box_reachable(position):  # Implement this function
                 reachable_boxes.append(box_id)
                 neighbor_counts[box_id] = 0
                 for other_box_id, other_position in box_positions.items():
@@ -307,28 +333,7 @@ class Solution(SolutionBase):
         # Return the position of the box with the most neighbors
         best_box_id = prioritized_boxes[0]
         return box_positions[best_box_id]
-    
-    def is_box_reachable(self, box_position):
-        """
-        Check if the box is within the robot's workspace.
-        Args:
-            box_position: 3D global position of the box.
-        Returns:
-            bool: True if the box is reachable, False otherwise.
-        """
-        # Define the robot's workspace limits (adjust as needed)
-        workspace_limits = {
-            'x': [-0.30, 0.20],  # X-axis limits
-            'y': [-0.40, 0.40],  # Y-axis limits
-            'z': [0.0, 1.5]    # Z-axis limits
-        }
-
-        # Check if the box is within the workspace limits
-        within_x = workspace_limits['x'][0] <= box_position[0] <= workspace_limits['x'][1]
-        within_y = workspace_limits['y'][0] <= box_position[1] <= workspace_limits['y'][1]
-        within_z = workspace_limits['z'][0] <= box_position[2] <= workspace_limits['z'][1]
-
-        return within_x and within_y and within_z
+   
     
     def locate_bin(self, z_offset=0.0):
         """
@@ -384,118 +389,107 @@ class Solution(SolutionBase):
         additional_force = [0] * robot.dof 
         robot.set_action(drive_target, drive_velocity, additional_force)
 
-
-    def jacobian_drive1(self, robot, index, target_pose):
+    def jacobian_drive(self, robot, end_effector_index, target_pose, velocity_scale=0.3):
         """
-        Implementation of differential drive using twist differential IK.
-        This approach constructs a body twist to move from current pose to target pose,
-        then uses the robot's twist differential IK to compute joint velocities.
+        Move the robot's end effector to a target pose using Jacobian-based control.
         
         Args:
-            robot: Robot instance with compute functions
-            index: Index of the end effector
-            target_pose: Target Pose object containing position and orientation
+            robot: Robot instance to control
+            end_effector_index: Index of the end effector
+            target_pose: Target pose to reach
+            velocity_scale: Scaling factor for movement speed (default: 0.3)
         """
-        # Get passive force compute function
-        pf = robot.get_compute_functions()['passive_force'](True, True, False)
-        
-        # Maximum linear and angular velocities
-        max_v = 0.1  # m/s
-        max_w = np.pi  # rad/s
-        
         # Get current robot state
-        qpos, qvel, poses = robot.get_observation()
-        current_pose: Pose = poses[index]
+        robot_state = self._get_robot_state(robot, end_effector_index)
         
-        # Compute position error in world frame
-        delta_p = target_pose.p - current_pose.p
+        # Calculate pose transformation
+        pose_transform = self._calculate_pose_transform(
+            robot_state.current_pose, 
+            target_pose
+        )
         
-        # Get transformation matrices
-        current_T = pose2mat(current_pose)
-        target_T = pose2mat(target_pose)
+        # Compute body twist
+        body_twist = self._compute_body_twist(pose_transform, velocity_scale)
         
-        # Compute relative transformation
-        # T_rel = inv(current_T) @ target_T
-        T_rel = np.linalg.inv(current_T) @ target_T
+        # Transform to spatial twist
+        spatial_twist = self._transform_to_spatial_twist(
+            body_twist,
+            robot_state.rotation,
+            robot_state.position
+        )
         
-        # Extract rotation matrix and position from relative transform
-        R_rel = T_rel[:3, :3]
-        p_rel = T_rel[:3, 3]
-        
-        # Convert rotation matrix to axis-angle
-        # Using the fact that: tr(R) = 1 + 2cos(θ)
-        theta = np.arccos((np.trace(R_rel) - 1) / 2)
-        
-        if abs(theta) < 1e-10:
-            axis = np.array([0., 0., 1.])  # Default axis if no rotation
-        else:
-            # axis = [R32-R23, R13-R31, R21-R12] / (2sin(θ))
-            axis = np.array([
-                R_rel[2,1] - R_rel[1,2],
-                R_rel[0,2] - R_rel[2,0],
-                R_rel[1,0] - R_rel[0,1]
-            ]) / (2 * np.sin(theta))
-            axis = axis / np.linalg.norm(axis)
-        
-        # Normalize angle to [-π, π]
-        if theta > np.pi:
-            theta -= np.pi * 2
-        
-        # Compute time scaling based on maximum velocities
-        t1 = np.linalg.norm(p_rel) / max_v
-        t2 = np.abs(theta) / max_w
-        t = max(t1, t2, 0.001)
-        
-        # Apply smoothing for small time values
-        thres = 0.1
-        if t < thres:
-            k = (np.exp(thres) - 1) / thres
-            t = np.log(k * t + 1)
-        
-        # Compute linear and angular velocities in body frame
-        v_body = p_rel / t
-        w_body = axis * (theta / t)
-        
-        # Construct body twist vector [ω, v]
-        twist = np.concatenate((w_body, v_body))
-        
-        # Compute joint velocities using twist differential IK
-        target_qvel = robot.get_compute_functions()['twist_diff_ik'](twist, index)
-        
-        # Set robot action
-        robot.set_action(qpos, target_qvel, pf)
+        # Compute and set joint velocities
+        self._set_robot_velocities(robot, robot_state, spatial_twist)
 
-    def jacobian_drive(self, robot, index, target_pose, speed=0.3):
-            """
-            This function aims to move the robot's end effector to a target pose based on Jacobian matrices,
-            which relate joint velocities to end effector velocities
+    def _get_robot_state(self, robot, end_effector_index):
+        """
+        Get the current state of the robot.
+        
+        Returns:
+            RobotState: Named tuple containing robot state information
+        """
+        from collections import namedtuple
+        RobotState = namedtuple('RobotState', 
+            ['joint_positions', 'joint_velocities', 'current_pose', 
+             'rotation', 'position', 'passive_force'])
+        
+        # Get robot state
+        passive_force = robot.get_compute_functions()['passive_force'](True, True, False)
+        joint_positions, joint_velocities, poses = robot.get_observation()
+        
+        # Convert current pose to matrix form
+        current_pose_matrix = pose2mat(poses[end_effector_index])
+        
+        return RobotState(
+            joint_positions=joint_positions,
+            joint_velocities=joint_velocities,
+            current_pose=current_pose_matrix,
+            rotation=current_pose_matrix[:3, :3],
+            position=current_pose_matrix[:3, 3],
+            passive_force=passive_force
+        )
 
-            para: similar to above
-            """
-            # ee_pose to matrix
-            passive_force = robot.get_compute_functions()['passive_force'](True, True, False)
-            q_position, q_velocity, poses = robot.get_observation()
-            current_pose: Pose = poses[index]
-            current_pose = pose2mat(current_pose)
-            current_rotation = current_pose[:3, :3]
-            current_position = current_pose[:3, 3]
-            target_pose = pose2mat(target_pose)
+    def _calculate_pose_transform(self, current_pose, target_pose):
+        """
+        Calculate the transformation between current and target poses.
+        """
+        target_pose_matrix = pose2mat(target_pose)
+        return np.linalg.inv(current_pose) @ target_pose_matrix
 
-            # transformation from current to target
-            pose_difference = np.linalg.inv(current_pose) @ target_pose
-            twist_difference, theta_difference = pose2exp_coordinate(pose_difference)
-            twist_body_difference = twist_difference * speed
+    def _compute_body_twist(self, pose_transform, velocity_scale):
+        """
+        Compute the body twist from pose transformation.
+        """
+        twist, _ = pose2exp_coordinate(pose_transform)
+        return twist * velocity_scale
 
-            # compute v with twist
-            my_adjoint_matrix = np.zeros((6, 6))
-            my_adjoint_matrix[0:3, 0:3] = current_rotation
-            my_adjoint_matrix[3:6, 3:6] = current_rotation
-            my_adjoint_matrix[3:6, 0:3] = skew_symmetric_matrix(current_position) @ current_rotation
-            ee_twist_difference = my_adjoint_matrix @ twist_body_difference
-            target_q_velocity = self.compute_joint_velocity_from_twist(robot, ee_twist_difference)
+    def _transform_to_spatial_twist(self, body_twist, rotation, position):
+        """
+        Transform body twist to spatial twist using adjoint matrix.
+        """
+        adjoint = self._create_adjoint_matrix(rotation, position)
+        return adjoint @ body_twist
 
-            robot.set_action(q_position, target_q_velocity, passive_force)
+    def _create_adjoint_matrix(self, rotation, position):
+        """
+        Create the adjoint matrix for twist transformation.
+        """
+        adjoint = np.zeros((6, 6))
+        adjoint[0:3, 0:3] = rotation
+        adjoint[3:6, 3:6] = rotation
+        adjoint[3:6, 0:3] = skew_symmetric_matrix(position) @ rotation
+        return adjoint
 
+    def _set_robot_velocities(self, robot, robot_state, spatial_twist):
+        """
+        Compute and set joint velocities based on spatial twist.
+        """
+        target_velocities = self.compute_joint_velocity_from_twist(robot, spatial_twist)
+        robot.set_action(
+            robot_state.joint_positions,
+            target_velocities,
+            robot_state.passive_force
+        )
 
     def compute_joint_velocity_from_twist(self, robot, twist: np.ndarray) -> np.ndarray:
         """
@@ -516,63 +510,6 @@ class Solution(SolutionBase):
         # twist to joint velocity
         joint_velocity = ee_jacobian_inverse @ twist
         return joint_velocity
-    
-    
-    def is_collision_detected(current_pose, bin_center, threshold=0.05):
-        """
-        Check if the spade is too close to the bin.
-        Args:
-            current_pose: Current pose of the spade.
-            bin_center: Center of the bin.
-            threshold: Minimum safe distance (default: 0.05 meters).
-        Returns:
-            True if a collision is detected, False otherwise.
-        """
-        distance = np.linalg.norm(current_pose.p - bin_center)
-        return distance < threshold
-    
-    def get_offset(self,current_pose, bin_center):
-        offset_x = bin_center[0] - current_pose[0]
-        offset_y = bin_center[1] - current_pose[1]
-        print("offset_y",offset_y)
-        target_position = [
-            current_pose[0],
-            current_pose[1] + offset_y,
-            current_pose[2]
-        ]
-
-        return target_position
-    
-    def locate_spade_length(self, camera):
-        """
-        Calculate the length of the spade using the camera's segmentation and depth data.
-        """
-        _, depth, segmentation = camera.get_observation()
-
-        # Get the spade's ID from the robot's metadata
-        r_meta = env.get_agents()[1].get_metadata()  # Assuming r2 is the robot with the spade
-        spade_id = r_meta['link_ids'][-1]  # Spade is typically the last link
-
-        # Find the pixels belonging to the spade
-        spade_pixels = np.where(segmentation == spade_id)
-        if len(spade_pixels[0]) == 0:
-            raise ValueError("Spade not found in the camera's view.")
-
-        # Find the base and tip of the spade
-        # Base: Pixel closest to the robot's arm (assume the base is at the top of the image)
-        base_pixel = (spade_pixels[0].min(), spade_pixels[1][np.argmin(spade_pixels[0])])
-        
-        # Tip: Pixel farthest from the base (assume the tip is at the bottom of the image)
-        tip_pixel = (spade_pixels[0].max(), spade_pixels[1][np.argmax(spade_pixels[0])])
-
-        # Convert the base and tip pixels to global coordinates
-        base_position = self.get_global_position_from_camera(camera, depth, base_pixel[1], base_pixel[0])
-        tip_position = self.get_global_position_from_camera(camera, depth, tip_pixel[1], tip_pixel[0])
-
-        # Compute the Euclidean distance between the base and tip
-        spade_length = np.linalg.norm(base_position - tip_position)
-        return spade_length
-        
 
 def skew_symmetric_matrix(v):
     return np.array([
@@ -681,9 +618,63 @@ def pose2mat(pose):
     T[:3,3] = pos
     
     return T
+    
+def is_spade_empty(self, camera, robot):
+    color, depth, segmentation = camera.get_observation()
+    
+    # First get the global positions of all boxes
+    box_positions = {}
+    for box_id in self.box_ids:
+        #print(box_id)
+        m = np.where(segmentation == box_id)
+        if len(m[0]):
+            min_x = np.min(m[1])
+            max_x = np.max(m[1])
+            min_y = np.min(m[0])
+            max_y = np.max(m[0])
+            x, y = round((min_x + max_x) / 2), round((min_y + max_y) / 2)
+            global_pos = self.get_global_position_from_camera(camera, depth, x, y)
+            if global_pos is not None:
+                print(box_id)
+                box_positions[box_id] = global_pos
 
+    # Check for elevated boxes
+    surface_height = 0.61  # Known surface height
+    threshold = 0.03
+    print(len(box_positions.items()))
+    for box_id, pos in box_positions.items():
+        if (is_box_reachable(pos) and pos[2] > (surface_height + threshold)):  # z-axis check
+            print("elevated and reachable: ",box_id)
+            print(pos)
+            return False
+            
+    return True
+
+def is_box_reachable(box_position):
+        """
+        Check if the box is within the robot's workspace.
+        Args:
+            box_position: 3D global position of the box.
+        Returns:
+            bool: True if the box is reachable, False otherwise.
+        """
+        # Define the robot's workspace limits (adjust as needed)
+        workspace_limits = {
+            'x': [-0.30, 0.19],  # X-axis limits
+            'y': [-0.40, 0.40],  # Y-axis limits
+            'z': [0.0, 0.64]    # Z-axis limits
+        }
+
+        # Check if the box is within the workspace limits
+        within_x = workspace_limits['x'][0] <= box_position[0] <= workspace_limits['x'][1]
+        within_y = workspace_limits['y'][0] <= box_position[1] <= workspace_limits['y'][1]
+        #within_z = workspace_limits['z'][0] <= box_position[2] <= workspace_limits['z'][1]
+
+        #return within_x and within_y and within_z
+        return within_x and within_y
+    
 if __name__ == '__main__':
-    np.random.seed(123)
+    np.random.seed(100)
     env = FinalEnv()
     env.run(Solution(), render=True, render_interval=5, debug=True)
     env.close()
