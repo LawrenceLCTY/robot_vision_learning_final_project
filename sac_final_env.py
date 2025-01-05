@@ -12,6 +12,7 @@ from sapien.core import Pose, PxrMaterial, OptifuserConfig, SceneConfig
 from transforms3d.quaternions import axangle2quat, qmult
 import numpy as np
 from typing import List
+from tqdm import tqdm
 
 steel = PxrMaterial()
 steel.metallic = 0.9
@@ -487,11 +488,13 @@ class FinalEnv(Env):
             self.print_stat()
             return
 
+        print("rendering")
+
         while self.global_total_timesteps < self.global_max_steps:
             # In testing, a fixed sequence of randomly seeds will be set here
             self.reset()
             solution.init(self)
-            while True:
+            for steps in tqdm(range(self.local_max_steps), desc="rendering"):
                 if self.local_total_timesteps >= self.local_max_steps or \
                    self.global_total_timesteps >= self.global_max_steps or \
                    solution.act(self, self.local_total_timesteps) == False:
