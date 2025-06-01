@@ -15,7 +15,7 @@ if __name__ == '__main__':
     # at test time, we will use different random seeds.
     np.random.seed(0)
     env = FinalEnv()
-    env.run(Solution(), render=True, render_interval=5, debug=False)
+    env.run(Solution(), render=False, render_interval=5, debug=False)
     # at test time, run the following
     # env.run(Solution())
     env.close()

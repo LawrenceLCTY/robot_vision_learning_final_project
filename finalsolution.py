@@ -9,6 +9,7 @@ import numpy as np
 from sapien.core import Pose
 from transforms3d.euler import euler2quat, quat2euler
 from transforms3d.quaternions import quat2axangle, qmult, qinverse
+from sac_agent import SAC_agent
 
 def skew_symmetric_matrix(v):
     return np.array([
@@ -131,6 +132,10 @@ class Solution(SolutionBase):
     """
 
     def init(self, env: FinalEnv):
+
+        self.agent = SAC_agent(env)
+        self.agent.load_weight("SAPIEN_weights.pth")
+
         self.phase = 0
         self.drive = 0
         meta = env.get_metadata()
@@ -174,6 +179,8 @@ class Solution(SolutionBase):
         if self.phase == 0:
             t1 = [2, 1, 0, -1.5, -1, 1, -2]
             t2 = [-2, 1, 0, -1.5, 1, 1, -2]
+
+
 
             r1.set_action(t1, [0] * 7, pf_left)
             r2.set_action(t2, [0] * 7, pf_right)
