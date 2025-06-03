@@ -253,7 +253,6 @@ class FinalEnv(Env):
         b.add_visual_from_file('./assets/bigboard.obj', Pose([-0.3, 0, 0]))
         self.table = b.build_static(name="table")
 
-
     #####################################
     # attempt to create camera that is attached to the end-effector
     def create_end_effector_camera(self, robot, camera_name, offset_pose=None, show_visual=True):
@@ -580,6 +579,162 @@ class FinalEnv(Env):
 
             # Display the image
             cv2.imshow(name, cv2.cvtColor(color_display, cv2.COLOR_RGB2BGR))
+
+    def get_RGBD_numpy(self, camera: Camera):
+        """
+        return the RGBD of a given camera
+        """
+        bgra, depth, segmentation = camera.get_observation()
+
+        bgr = bgra[:, :, :3]
+
+        rgb_np = np.array(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
+
+        rgb_np = cv2.normalize(rgb_np, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+
+        depth_normalized_np = np.expand_dims(np.array(cv2.normalize(depth, None, 0, 255, cv2.NORM_MINMAX,
+                                                                    dtype=cv2.CV_8U)), axis=-1)
+
+        rgbd_np = np.concatenate([rgb_np, depth_normalized_np], axis=-1)
+
+        return rgbd_np
+
+    ##############################################################
+    def get_end_effector_poses(self):
+        """
+        Get the position and rotation matrix of both robot end effectors.
+
+        Returns:
+            dict: Dictionary containing pose information for both end effectors
+                {
+                    'left_robot': {
+                        'position': np.array([x, y, z]),
+                        'rotation_matrix': np.array(3x3),
+                        'pose': sapien.Pose object
+                    },
+                    'right_robot': {
+                        'position': np.array([x, y, z]),
+                        'rotation_matrix': np.array(3x3),
+                        'pose': sapien.Pose object
+                    }
+                }
+        """
+        end_effector_poses = {}
+
+        # Get left robot end effector pose
+        if self.left_robot is not None:
+            # Get the end effector link (index 9 based on the code)
+            left_ee_link = self.left_robot.robot.get_links()[9]
+            left_pose = left_ee_link.get_pose()
+
+            end_effector_poses['left_robot'] = {
+                'position': np.array(left_pose.p),
+                'rotation_matrix': np.array(left_pose.to_transformation_matrix()[:3, :3]),
+                'pose': left_pose
+            }
+        else:
+            end_effector_poses['left_robot'] = None
+
+        # Get right robot end effector pose
+        if self.right_robot is not None:
+            # Get the end effector link (index 9 based on the code)
+            right_ee_link = self.right_robot.robot.get_links()[9]
+            right_pose = right_ee_link.get_pose()
+
+            end_effector_poses['right_robot'] = {
+                'position': np.array(right_pose.p),
+                'rotation_matrix': np.array(right_pose.to_transformation_matrix()[:3, :3]),
+                'pose': right_pose
+            }
+        else:
+            end_effector_poses['right_robot'] = None
+
+        return end_effector_poses
+
+    def get_end_effector_positions(self):
+        """
+        Get only the positions of both robot end effectors.
+
+        Returns:
+            dict: Dictionary containing position vectors
+                {
+                    'left_robot': np.array([x, y, z]) or None,
+                    'right_robot': np.array([x, y, z]) or None
+                }
+        """
+        positions = {}
+
+        if self.left_robot is not None:
+            left_ee_link = self.left_robot.robot.get_links()[9]
+            positions['left_robot'] = np.array(left_ee_link.get_pose().p)
+        else:
+            positions['left_robot'] = None
+
+        if self.right_robot is not None:
+            right_ee_link = self.right_robot.robot.get_links()[9]
+            positions['right_robot'] = np.array(right_ee_link.get_pose().p)
+        else:
+            positions['right_robot'] = None
+
+        return positions
+
+    def get_end_effector_rotation_matrices(self):
+        """
+        Get only the rotation matrices of both robot end effectors.
+
+        Returns:
+            dict: Dictionary containing 3x3 rotation matrices
+                {
+                    'left_robot': np.array(3x3) or None,
+                    'right_robot': np.array(3x3) or None
+                }
+        """
+        rotations = {}
+
+        if self.left_robot is not None:
+            left_ee_link = self.left_robot.robot.get_links()[9]
+            left_transform = left_ee_link.get_pose().to_transformation_matrix()
+            rotations['left_robot'] = np.array(left_transform[:3, :3])
+        else:
+            rotations['left_robot'] = None
+
+        if self.right_robot is not None:
+            right_ee_link = self.right_robot.robot.get_links()[9]
+            right_transform = right_ee_link.get_pose().to_transformation_matrix()
+            rotations['right_robot'] = np.array(right_transform[:3, :3])
+        else:
+            rotations['right_robot'] = None
+
+        return rotations
+
+    def print_end_effector_info(self):
+        """
+        Print current end effector pose information for debugging.
+        """
+        poses = self.get_end_effector_poses()
+
+        for robot_name, pose_data in poses.items():
+            if pose_data is not None:
+                print(f"\n{robot_name.upper()} End Effector:")
+                print(f"Position: {pose_data['position']}")
+                print(f"Rotation Matrix:\n{pose_data['rotation_matrix']}")
+            else:
+                print(f"\n{robot_name.upper()}: Not initialized")
+
+    def get_end_effector_distance(self):
+        """
+        Calculate the distance between the two end effectors.
+
+        Returns:
+            float: Distance between end effectors, or None if either robot is not initialized
+        """
+        positions = self.get_end_effector_positions()
+
+        if positions['left_robot'] is not None and positions['right_robot'] is not None:
+            return np.linalg.norm(positions['left_robot'] - positions['right_robot'])
+        else:
+            return None
+    ##############################################################
 
     def render(self, show_cameras=False):
         """Enhanced render method with camera view option"""

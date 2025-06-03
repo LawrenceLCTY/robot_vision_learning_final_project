@@ -54,8 +54,6 @@ class Solution(SolutionBase):
         self.useless_time = 0
         self.time_limit = 10000 #inefficient/useless time allowed
         self.sweep_start_pos = 0
-        
-    
 
     def act(self, env: FinalEnv, current_timestep: int):
         r1, r2, c1, c2, c3, c4 = env.get_agents()
@@ -229,7 +227,6 @@ class Solution(SolutionBase):
                 print(f'Current time: {self.useless_time}; Time limit: {self.time_limit}')
                 if self.fail_chances <= 0 or self.useless_time > self.time_limit: #too many failed chances or out of time
                     return False #end scene
-            
 
     def diff_drive(self, robot, index, target_pose):
         """
@@ -342,8 +339,7 @@ class Solution(SolutionBase):
         # Return the position of the box with the most neighbors
         best_box_id = prioritized_boxes[0]
         return box_positions[best_box_id]
-   
-    
+
     def locate_bin(self, z_offset=0.0):
         """
         Locate the bin's global position using the camera's segmentation and depth data.
@@ -384,7 +380,6 @@ class Solution(SolutionBase):
         tolerance = 0.15
         in_position = np.allclose(spade_position, bin_position, atol=tolerance)
         return in_position
-
 
     def rotate_spade(self, robot, initial_qpos, rotation_step, total_steps, clockwise=True):
         # Rotate the joint

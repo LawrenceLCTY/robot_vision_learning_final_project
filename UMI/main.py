@@ -6,7 +6,7 @@
 
 from final_env import FinalEnv
 # from baseline import Solution
-from solution import Solution
+from finalsolution import Solution
 import numpy as np
 
 if __name__ == '__main__':

@@ -171,12 +171,18 @@ class Solution(SolutionBase):
         pf_left = f = r1.get_compute_functions()['passive_force'](True, True, False)
         pf_right = f = r2.get_compute_functions()['passive_force'](True, True, False)
 
+        action_left = []
+        action_right = []
+
         if self.phase == 0:
             t1 = [2, 1, 0, -1.5, -1, 1, -2]
             t2 = [-2, 1, 0, -1.5, 1, 1, -2]
 
             r1.set_action(t1, [0] * 7, pf_left)
+            action_left = [t1, [0] * 7, pf_left]
+
             r2.set_action(t2, [0] * 7, pf_right)
+            action_right = [t2, [0] * 7, pf_right]
 
             if np.allclose(r1.get_observation()[0], t1, 0.05, 0.05) and np.allclose(
                     r2.get_observation()[0], t2, 0.05, 0.05):
@@ -191,13 +197,13 @@ class Solution(SolutionBase):
                 selected = self.pick_box1(c4)
                 self.selected_x = selected[0]
                 if self.selected_x is None:
-                    return False
+                    return False, [], [], -1
 
             target_pose_left = Pose([self.selected_x, 0.5, 0.67], euler2quat(np.pi, -np.pi / 3, -np.pi / 2))
-            self.diff_drive(r1, 9, target_pose_left)
+            action_left = self.diff_drive(r1, 9, target_pose_left)
 
             target_pose_right = Pose([self.selected_x, -0.5, 0.6], euler2quat(np.pi, -np.pi / 3, np.pi / 2))
-            self.diff_drive(r2, 9, target_pose_right)
+            action_right = self.diff_drive(r2, 9, target_pose_right)
 
             if self.counter == 2000 / 5:
                 self.phase = 2
@@ -215,8 +221,8 @@ class Solution(SolutionBase):
 
         if self.phase == 2:
             self.counter += 1
-            self.diff_drive(r1, 9, self.pose_left)
-            self.diff_drive(r2, 9, self.pose_right)
+            action_left = self.diff_drive(r1, 9, self.pose_left)
+            action_right = self.diff_drive(r2, 9, self.pose_right)
 
             if self.counter == 3000 / 5:
                 self.phase = 3
@@ -239,78 +245,20 @@ class Solution(SolutionBase):
         if self.phase == 3:
             if self.counter < 500 / 5:
                 self.counter += 1
-                self.diff_drive(r1, 9, self.pose_left)
-                self.diff_drive(r2, 9, self.pose_right)
+                action_left = self.diff_drive(r1, 9, self.pose_left)
+                action_right = self.diff_drive(r2, 9, self.pose_right)
 
             elif self.counter < 1500 / 5:
                 self.counter += 1
                 t1 = [3, 1, 0, -1.5, -1, 1, -2]
                 r1.set_action(t1, [0] * 7, pf_left)
-                self.diff_drive(r2, 9, self.pose_right)
+                action_right = self.diff_drive(r2, 9, self.pose_right)
 
             else:
                 self.phase = 4
                 #spade = self.locate_spade_length(c4)
-
                 self.counter = 0
-                
-        '''
-                if self.phase == 4:
-            self.counter += 1
-            if (self.counter < 3000 / 5):
-                print("Phase 4a") #debug
-                #TODO: collision-free trajectory to get r2 off the ground
-                pose = r2.get_observation()[2][9]
-                p, q = pose.p, pose.q
-                q = euler2quat(np.pi, -np.pi / 1.5, quat2euler(q)[2])
-                self.diff_drive2(r2, 9, Pose(p, q), [4, 5, 6], [0, 0, 0, -1, 0], [0, 1, 2, 3, 4])
-                
-            elif (self.counter < 6000 / 5):
-                print("Phase 4b") #debug
-                #TODO: collision-free trajectory to get r2 away from r1
-                pose = r2.get_observation()[2][9]
-                p, q = pose.p, pose.q
-                q = euler2quat(np.pi, -np.pi / 1.5, quat2euler(q)[2])
-                self.diff_drive2(r2, 9, Pose(p, q), [4, 5, 6], [0, 0, 1, -1, 0], [0, 1, 2, 3, 4])
-                                
-            elif not self.is_spade_above_bin(r2, self.r2_target_bin_position): #counter-independent condition
-                print("Phase 4c(i)") #debug
-                # move r2 to bin
-                self.move_to_bin(r2, self.r2_target_bin_position)
-                
-            elif not self.is_spade_above_bin(r1, self.r1_target_bin_position): #counter-independent condition
-                print("Phase 4c(ii)") #debug
-                # move r1 to bin
-                self.move_to_bin(r1, self.r1_target_bin_position)
-                
-            else:
-                print("Phase 4d")  # Debug
-                # Initialize rotation state if it doesn't exist
-                if not hasattr(self, "_rotation_step"):
-                    self._rotation_step = 0
-                    self._total_steps = 36
-                    self._delay_multiplier = 30
-                    self._delay_counter = 0
-                    self._initial_qpos = r2.get_observation()[0]  
-                    
-                if self._delay_counter < self._delay_multiplier:
-                    self._delay_counter += 1
-                else:
-                    self._delay_counter = 0
-                    self._rotation_step += 1
-                    
-                    self.rotate_spade(r2, self._initial_qpos, self._rotation_step, self._total_steps)
-                    self.rotate_spade(r1, self._initial_qpos, self._rotation_step, self._total_steps, clockwise=False)
 
-                # If rotation is complete, clean up private variables
-                if self._rotation_step >= self._total_steps:
-                    del self._rotation_step
-                    del self._total_steps
-                    del self._delay_multiplier
-                    del self._delay_counter
-                    del self._initial_qpos
-                    self.phase += 1  
-        '''
 
         if self.phase == 4:
             self.counter += 1
@@ -321,13 +269,13 @@ class Solution(SolutionBase):
                 p[2] += 0.5
                 q = euler2quat(np.pi, -np.pi / 1.5, quat2euler(q)[2])
                 #self.jacobian_drive(r2, 9, Pose(p, q))
-                self.jacobian_drive(r2, 9, Pose(p, q))
+                action_right = self.jacobian_drive(r2, 9, Pose(p, q))
             elif (self.counter < 6000 / 5):
                 p = self.bin_position.copy()
                 p[2]+=0.7
                 #p[0]+=0.2
                 q = euler2quat(0, -np.pi / 3, 0)
-                self.jacobian_drive(r2, 9, Pose(p, q))
+                action_right = self.jacobian_drive(r2, 9, Pose(p, q))
 
             elif(self.counter == 6000/5):
                 robot_pose = r2.get_observation()[2][9].p  # Robot's current end effector position
@@ -335,21 +283,6 @@ class Solution(SolutionBase):
 
             elif (self.counter < 7000 / 5):
                 print("Phase 4c")
-                '''
-                offset_x = 0.2  # Move forward by 0.5 meters
-                offset_y = -0.2  # Move to the right by 0.3 meters
-
-                # Set the target position
-                p = self.bin_position.copy()
-                p[0] += offset_x  # Move forward
-                p[1] += offset_y  # Move to the right
-                p[2] += 0.4
-                # Set the target orientation
-                q = euler2quat(0, -np.pi / 1.5, 0) # Tilt downward
-
-                # Move the robot's end effector to the target pose
-                self.jacobian_drive(r2, 9, Pose(p, q), speed=0.4)\
-                '''
                 cent = self.r2_target_bin_position.copy()
                 p = self.bin_position.copy()
                 #p[2] += 0.2
@@ -359,7 +292,7 @@ class Solution(SolutionBase):
                 #target_position[2] += 0.2
                 #target_position[0] -=0.1
                 q = euler2quat(0, -np.pi / 2, 0)
-                self.jacobian_drive(r2, 9, Pose(p, q), speed=0.4)
+                action_right = self.jacobian_drive(r2, 9, Pose(p, q), speed=0.4)
             
             elif(self.counter == 7000/5):
                 robot_pose = r2.get_observation()[2][9].p  # Robot's current end effector position
@@ -379,7 +312,7 @@ class Solution(SolutionBase):
                 #target_position = self.get_offset(r2.get_observation()[2][9].p,p)
                 #target_position[0] -= 0.1
                 q = euler2quat(0, -np.pi / 2, 0)
-                self.jacobian_drive(r2, 9, Pose(self.target_position, q), speed=0.4)
+                action_right = self.jacobian_drive(r2, 9, Pose(self.target_position, q), speed=0.4)
 
             else:
                 #print("Phase 4d")  # Debug
@@ -398,7 +331,7 @@ class Solution(SolutionBase):
                     self._delay_counter = 0
                     self._rotation_step += 1
                     
-                    self.rotate_spade(r2, self._initial_qpos, self._rotation_step, self._total_steps)
+                    action_right = self.rotate_spade(r2, self._initial_qpos, self._rotation_step, self._total_steps)
                     #self.rotate_spade(r1, self._initial_qpos, self._rotation_step, self._total_steps, clockwise=False)
                 if self._rotation_step >= self._total_steps:
                     del self._rotation_step
@@ -406,55 +339,16 @@ class Solution(SolutionBase):
                     del self._delay_multiplier
                     del self._delay_counter
                     del self._initial_qpos
-                    self.phase += 1  
-
-            '''
-            elif not self.is_spade_above_bin(r2, self.r2_target_bin_position) and self.rotate_flag==False: #counter-independent condition
-                print("Phase 4c(i)") #debug
-                # move r2 to bin
-                # self.move_to_bin(r2, self.r2_target_bin_position)
-                #target = self.r2_target_bin_position.p
-                
-                
-                if self.is_collision_detected(r2.get_observation()[2][9],self.bin_position):
-                    pose = r2.get_observation()[2][9]
-                    delta_p = pose.p - self.bin_position
-                    if delta_p[0] > 0:  # Obstacle is in front
-                        adjustment = np.array([-0.1, 0, 0])  # Move backward
-                    elif delta_p[0] < 0:  # Obstacle is behind
-                        adjustment = np.array([0.1, 0, 0])  # Move forward
-                    elif delta_p[1] > 0:  # Obstacle is to the left
-                        adjustment = np.array([0, -0.1, 0])  # Move to the right
-                    elif delta_p[1] < 0:  # Obstacle is to the right
-                        adjustment = np.array([0, 0.1, 0])  # Move to the left
-                    elif delta_p[2] > 0:  # Obstacle is above
-                        adjustment = np.array([0, 0, -0.1])  # Move downward
-                    elif delta_p[2] < 0:  # Obstacle is below
-                        adjustment = np.array([0, 0, 0.1])  # Move upward
-                    else:
-                        adjustment = np.array([0, 0, 0])  # No adjustment needed
-                    target += adjustment
-
-                
-                approach_orientation = euler2quat(0, -np.pi / 2, 0)
-                #target[1] += -0.1
-                #self.move_to_bin(r2, target)
-                #q = euler2quat(0, -np.pi / 3, 0) 
-
-                current_pose = r2.get_observation()[2][9]
-                current_position = current_pose.p
-                target_position = self.bin_position[:3]
-                # Set the target orientation (tilt downward)
-                approach_orientation = euler2quat(0, -np.pi / 2, 0)
-                self.jacobian_drive(r2, 9, Pose(target_position, approach_orientation), speed=0.3)
-                #self.jacobian_drive(r2, 9, Pose(target, approach_orientation), speed=0.2)
-            '''
-
-
+                    self.phase += 1
                                         
         if self.phase == 5: #set an independent phase for return to start
             self.rotate_flag=False
             self.phase = 0
+
+        # print(f"current right action: {action_right}")
+        print(f"current phase: {self.phase}")
+
+        return True, action_left, action_right, self.phase
 
     def jacobian_drive1(self, robot, index, target_pose):
         """
@@ -567,6 +461,8 @@ class Solution(SolutionBase):
 
             robot.set_action(q_position, target_q_velocity, passive_force)
 
+            return [q_position, target_q_velocity, passive_force]
+
     def diff_drive(self, robot, index, target_pose):
         """
         this diff drive is very hacky
@@ -601,37 +497,7 @@ class Solution(SolutionBase):
         target_qvel = robot.get_compute_functions()['cartesian_diff_ik'](np.concatenate((v, w)), 9)
         robot.set_action(qpos, target_qvel, pf)
 
-    def diff_drive2(self, robot, index, target_pose, js1, joint_target, js2):
-        """
-        This is a hackier version of the diff_drive
-        It uses specified joints to achieve the target pose of the end effector
-        while asking some other specified joints to match a global pose
-        """
-        pf = robot.get_compute_functions()['passive_force'](True, True, False)
-        max_v = 0.1
-        max_w = np.pi
-        qpos, qvel, poses = robot.get_observation()
-        current_pose: Pose = poses[index]
-        delta_p = target_pose.p - current_pose.p
-        delta_q = qmult(target_pose.q, qinverse(current_pose.q))
-
-        axis, theta = quat2axangle(delta_q)
-        if (theta > np.pi):
-            theta -= np.pi * 2
-
-        t1 = np.linalg.norm(delta_p) / max_v
-        t2 = theta / max_w
-        t = max(np.abs(t1), np.abs(t2), 0.001)
-        thres = 0.1
-        if t < thres:
-            k = (np.exp(thres) - 1) / thres
-            t = np.log(k * t + 1)
-        v = delta_p / t
-        w = theta / t * axis
-        target_qvel = robot.get_compute_functions()['cartesian_diff_ik'](np.concatenate((v, w)), 9)
-        for j, target in zip(js2, joint_target):
-            qpos[j] = target
-        robot.set_action(qpos, target_qvel, pf)
+        return [qpos, target_qvel, pf]
 
     def get_global_position_from_camera(self, camera, depth, x, y):
         """
@@ -745,6 +611,8 @@ class Solution(SolutionBase):
         drive_velocity = [0] * robot.dof  
         additional_force = [0] * robot.dof 
         robot.set_action(drive_target, drive_velocity, additional_force)
+
+        return [drive_target, drive_velocity, additional_force]
 
     def compute_joint_velocity_from_twist(self, robot, twist: np.ndarray) -> np.ndarray:
         """
