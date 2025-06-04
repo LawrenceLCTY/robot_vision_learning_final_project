@@ -1,3 +1,5 @@
+import os.path
+
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -172,20 +174,29 @@ class RGBDNetwork(nn.Module):
             align_corners=False
         )
 
-        action_inputs = torch.tensor(np.array([np.array(transition[ACTIONS]) for transition in batch]).astype(np.float32),
-                                   device=device)
+        # action_inputs = torch.tensor(np.array([np.array(transition[ACTIONS]) for transition in batch]).astype(np.float32),
+        #                            device=device)
 
-        print(action_inputs)
+        # print(action_inputs)
 
-        print(f"before processing: {RGBD_inputs.shape}")
+        # print(f"before processing: {RGBD_inputs.shape}")
 
         processed_RGBD = self.forward(RGBD_inputs)
 
-        processed_RGBD = torch.cat([processed_RGBD, action_inputs], dim=1)
+        # processed_RGBD = torch.cat([processed_RGBD, action_inputs], dim=1)
 
-        print(f"after processing: {processed_RGBD.shape}")
+        # print(f"after processing: {processed_RGBD.shape}")
 
         return processed_RGBD
+
+    def save_weights(self, weight_name="rgbdNet_weights.pth"):
+        torch.save(self.state_dict(), weight_name)
+
+    def load_weights(self, weight_path):
+        if not os.path.exists(weight_path):
+            print(f"weight path is invalid {weight_path}")
+            return False
+        self.load_state_dict(torch.load(weight_path))
 
 
 class PolicyNetwork(nn.Module):
@@ -280,5 +291,14 @@ class PolicyNetwork(nn.Module):
         scaled_action = torch.cat([action_first_3, scaled_rotation], dim=1)
 
         return scaled_action, log_prob
+
+    def save_weights(self, weight_name="policyNet_weights.pth"):
+        torch.save(self.state_dict(), weight_name)
+
+    def load_weights(self, weight_path):
+        if not os.path.exists(weight_path):
+            print(f"weight path is invalid {weight_path}")
+            return False
+        self.load_state_dict(torch.load(weight_path))
 
 
