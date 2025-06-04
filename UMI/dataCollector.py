@@ -26,6 +26,8 @@ import os
 import cv2
 import random
 
+from neural_networks import RGBDNetwork, PolicyNetwork
+
 
 # class DataCollector:
 #     def __init__(self):
@@ -205,7 +207,7 @@ def get_imitation_training_data(data_dir, batch_size=64, interval=1):
 
         batch.append({CUR_STATES: state_arr, ACTIONS: right_arm_action})
 
-    print(batch)
+    # print(batch)
 
     # current batch states are not loaded yet, need to load the RGBD images into a single np array
     for transition in batch:
@@ -214,7 +216,7 @@ def get_imitation_training_data(data_dir, batch_size=64, interval=1):
         for state_folder_path in state_folder_path_arr:
             rgbd_arr = Image.open(state_folder_path)
             if final_state_npy is None:
-                final_state_npy  = rgbd_arr
+                final_state_npy = np.array(rgbd_arr)
             else:
                 final_state_npy = np.concatenate((final_state_npy, rgbd_arr), axis=1)
 
@@ -231,8 +233,24 @@ def get_imitation_training_data(data_dir, batch_size=64, interval=1):
 
 
 if __name__ == "__main__":
-    np.random.seed(0)
-    env = FinalEnv()
+    # np.random.seed(0)
+    # env = FinalEnv()
 
-    collect_data(env, total_trajectory_num=2)
-    # get_imitation_training_data("./data/", interval=5)
+    # collect_data(env, total_trajectory_num=200)
+    success, batch = get_imitation_training_data("./data/", interval=1)
+
+    # input_height = len(batch[0][CUR_STATES])
+    # input_width = len(batch[0][CUR_STATES][0])
+
+    # print(f'{input_height},{input_width}')
+
+    # rgbd net processed batch transitions into inputs for policy network
+    rgbd_net = RGBDNetwork(input_height=224, input_width=600, output_dim=512)
+    batch_policy_inputs = rgbd_net.process_inputs(batch)
+
+    # action bound not considered for now
+    p_net = PolicyNetwork(n_states=524, n_actions=12, action_bounds=[-1, 1])
+    output_actions, log_probs = p_net.sample_or_likelihood(batch_policy_inputs)
+    print(output_actions)
+
+
