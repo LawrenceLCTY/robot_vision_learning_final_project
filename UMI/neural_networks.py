@@ -141,7 +141,7 @@ class RGBDNetwork(nn.Module):
 
         print(f"x after convolution {x.shape}")
 
-        print(f"expected inputs {self.conv_output_size}")
+        # print(f"expected inputs {self.conv_output_size}")
 
         # Flatten for fully connected layers
         x = x.reshape(x.shape[0], -1)

@@ -193,7 +193,7 @@ def get_imitation_training_data(data_dir, batch_size=64, interval=1):
 
         # use the timestep to get the correct action
         time_step = int(cur_state_filename.split(".")[0])
-        print(time_step)
+        # print(time_step)
 
         # collect interval number of foldername to be combined to form the inputs for the neural network
         state_arr = []

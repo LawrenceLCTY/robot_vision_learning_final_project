@@ -17,7 +17,7 @@ from tqdm import tqdm
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 def imitation_learning(pNet: PolicyNetwork, pNet_opt, rgbdNet: RGBDNetwork, rgbNet_opt, loss_criterion, epoch_num=500,
-                       folder_path="./IL_training"):
+                       folder_path="./IL_training", batch_sze=64, interval=1):
     """
     just use MSE for loss, try to generate policy as close to the collected trajectories as possible
     """
@@ -26,7 +26,7 @@ def imitation_learning(pNet: PolicyNetwork, pNet_opt, rgbdNet: RGBDNetwork, rgbN
 
     for epoch in tqdm(range(epoch_num), desc="imitiation learning"):
         # collect_data(env, total_trajectory_num=200)
-        success, batch = get_imitation_training_data("./data/", interval=1)
+        success, batch = get_imitation_training_data("./data/", batch_size=batch_size, interval=interval)
 
         gt_action_inputs_tensor = torch.tensor(np.array([np.array(transition[ACTIONS]) for transition in batch])
                                                .astype(np.float32), device=device)
@@ -65,21 +65,27 @@ if __name__ == "__main__":
     input_width = 600
     output_dim = 512
     action_dim = 12
-    epoch_num = 500
+    epoch_num = 1
+
+    action_bounds = [-1, 1]
 
     lr = 3e-4
-    batch_size = 256
+    batch_size = 64
+    interval = 1
+
+
     # Create MSE loss function
     criterion = nn.MSELoss()
 
     rgbd_network = RGBDNetwork(input_height, input_width, output_dim)
-    policy_network = PolicyNetwork(n_states=output_dim, n_actions=action_dim, action_bounds=[-1, 1])
+    policy_network = PolicyNetwork(n_states=output_dim, n_actions=action_dim, action_bounds=action_bounds)
 
     # initialise optimizers
     policy_opt = Adam(policy_network.parameters(), lr=lr)
     rgbd_opt = Adam(policy_network.parameters(), lr=lr)
 
     # start learning
-    imitation_learning(policy_network, policy_opt, rgbd_network, rgbd_opt, criterion, epoch_num, folder_path="IL_training")
+    imitation_learning(policy_network, policy_opt, rgbd_network, rgbd_opt, criterion, epoch_num,
+                       batch_sze=batch_size, interval=interval, folder_path="IL_training")
 
 
