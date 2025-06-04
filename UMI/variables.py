@@ -5,3 +5,8 @@ ACTIONS = "actions"
 
 L_POS_FILENAME = "left_arm_positions.txt"
 R_POS_FILENAME = "right_arm_positions.txt"
+
+LOSS_FILENAME = "loss.txt"
+
+RGBD_WEIGHT_FILENAME = "rgbdNet_weights.pth"
+POLICY_WEIGHT_FILENAME = "policyNet_weights.pth"
