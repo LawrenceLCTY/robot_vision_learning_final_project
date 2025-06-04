@@ -54,8 +54,10 @@ def imitation_learning(pNet: PolicyNetwork, pNet_opt, rgbdNet: RGBDNetwork, rgbN
         # save the loss for observation
         append_values_to_file(mse_loss.item(), os.path.join(folder_path, LOSS_FILENAME))
 
-    rgbdNet.save_weights(os.path.join(folder_path, RGBD_WEIGHT_FILENAME))
-    pNet.save_weights(os.path.join(folder_path, POLICY_WEIGHT_FILENAME))
+        # save every 10 epoch
+        if epoch % 10 == 0:
+            rgbdNet.save_weights(os.path.join(folder_path, RGBD_WEIGHT_FILENAME))
+            pNet.save_weights(os.path.join(folder_path, POLICY_WEIGHT_FILENAME))
 
 
 if __name__ == "__main__":
@@ -65,12 +67,12 @@ if __name__ == "__main__":
     input_width = 600
     output_dim = 512
     action_dim = 12
-    epoch_num = 1
+    epoch_num = 500
 
     action_bounds = [-1, 1]
 
     lr = 3e-4
-    batch_size = 64
+    batch_size = 256
     interval = 1
 
 
@@ -80,6 +82,12 @@ if __name__ == "__main__":
     rgbd_network = RGBDNetwork(input_height, input_width, output_dim)
     policy_network = PolicyNetwork(n_states=output_dim, n_actions=action_dim, action_bounds=action_bounds)
 
+    # load weights is available 
+    folder_path = "./IL_training/"
+
+    rgbd_network.load_weights(os.path.join(folder_path, RGBD_WEIGHT_FILENAME))
+    policy_network.load_weights(os.path.join(folder_path, POLICY_WEIGHT_FILENAME))
+    
     # initialise optimizers
     policy_opt = Adam(policy_network.parameters(), lr=lr)
     rgbd_opt = Adam(policy_network.parameters(), lr=lr)
